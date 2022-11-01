@@ -1,0 +1,4 @@
+/target
+/tmp
+# Ignore WASM package folder.
+dist/

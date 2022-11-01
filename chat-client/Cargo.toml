@@ -1,0 +1,14 @@
+[package]
+authors = ["Vince Vasta <vince.vasta@gmail.com>"]
+description = "A libp2p chat client example running as a browser wasm app."
+edition = "2021"
+license = "MIT"
+name = "chat-client"
+version = "0.1.0"
+
+[dependencies]
+eframe = "0.19.0"
+egui = "0.19.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1"

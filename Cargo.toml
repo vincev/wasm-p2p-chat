@@ -1,0 +1,12 @@
+[workspace]
+members = [
+  "chat-client",
+  "chat-server",
+]
+
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+[profile.dev]
+debug = 2
+opt-level = 0

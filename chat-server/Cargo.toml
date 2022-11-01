@@ -1,0 +1,23 @@
+[package]
+authors = ["Vince Vasta <vince.vasta@gmail.com>"]
+description = "A libp2p chat server example."
+edition = "2021"
+license = "MIT"
+name = "chat-server"
+version = "0.1.0"
+
+[dependencies]
+async-std = { version = "1.12.0", features = ["attributes"] }
+clap = { version = "4.0.18", features = ["derive"] }
+futures = "0.3.25"
+
+[dependencies.libp2p]
+path = "../../rust-libp2p"
+features = [
+    "async-std",
+    "floodsub",
+    "mplex",
+    "noise",
+    "tcp",
+    "websocket"
+]
