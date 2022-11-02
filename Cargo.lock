@@ -313,6 +313,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
+name = "base-x"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cbbc9d0964165b47557570cce6c952866c2678457aca742aafc9fb771d30270"
+
+[[package]]
 name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -490,9 +496,16 @@ dependencies = [
 name = "chat-client"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
+ "async-executor",
  "console_error_panic_hook",
  "eframe",
  "egui",
+ "futures",
+ "libp2p",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "websys-transport",
 ]
 
 [[package]]
@@ -855,6 +868,26 @@ name = "data-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ee2393c4a91429dffb4bedf19f4d6abf27d8a732c8ce4980305d782e5426d57"
+
+[[package]]
+name = "data-encoding-macro"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86927b7cd2fe88fa698b87404b287ab98d1a0063a34071d92e575b72d3029aca"
+dependencies = [
+ "data-encoding",
+ "data-encoding-macro-internal",
+]
+
+[[package]]
+name = "data-encoding-macro-internal"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5bbed42daaa95e780b60a50546aa345b8413a1e46f9a40a12907d3598f038db"
+dependencies = [
+ "data-encoding",
+ "syn",
+]
 
 [[package]]
 name = "digest"
@@ -1693,7 +1726,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-core"
-version = "0.37.0"
+version = "0.38.0"
 dependencies = [
  "asn1_der",
  "bs58",
@@ -1724,7 +1757,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-dns"
-version = "0.37.0"
+version = "0.38.0"
 dependencies = [
  "async-std-resolver",
  "futures",
@@ -1737,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-floodsub"
-version = "0.40.1"
+version = "0.41.0"
 dependencies = [
  "cuckoofilter",
  "fnv",
@@ -1749,11 +1782,12 @@ dependencies = [
  "prost-build",
  "rand 0.8.5",
  "smallvec",
+ "thiserror",
 ]
 
 [[package]]
 name = "libp2p-mdns"
-version = "0.41.0"
+version = "0.42.0"
 dependencies = [
  "async-io",
  "data-encoding",
@@ -1771,7 +1805,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-mplex"
-version = "0.37.0"
+version = "0.38.0"
 dependencies = [
  "asynchronous-codec",
  "bytes",
@@ -1787,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-noise"
-version = "0.40.0"
+version = "0.41.0"
 dependencies = [
  "bytes",
  "curve25519-dalek 3.2.1",
@@ -1807,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-swarm"
-version = "0.40.1"
+version = "0.41.0"
 dependencies = [
  "either",
  "fnv",
@@ -1848,7 +1882,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-websocket"
-version = "0.39.0"
+version = "0.40.0"
 dependencies = [
  "either",
  "futures",
@@ -1992,20 +2026,31 @@ dependencies = [
 
 [[package]]
 name = "multiaddr"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c580bfdd8803cce319b047d239559a22f809094aaea4ac13902a1fdcfcd4261"
+checksum = "8b8d2f5ee4645ab2c09b846006f3bb0916e728a0384982544dba553be727d772"
 dependencies = [
  "arrayref",
- "bs58",
  "byteorder",
  "data-encoding",
+ "multibase",
  "multihash",
  "percent-encoding",
  "serde",
  "static_assertions",
  "unsigned-varint",
  "url",
+]
+
+[[package]]
+name = "multibase"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b3539ec3c1f04ac9748a260728e855f261b4977f5c3406612c884564f329404"
+dependencies = [
+ "base-x",
+ "data-encoding",
+ "data-encoding-macro",
 ]
 
 [[package]]
@@ -3662,6 +3707,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "368bfe657969fb01238bb756d351dcade285e0f6fcbd36dcb23359a5169975be"
 dependencies = [
  "webpki",
+]
+
+[[package]]
+name = "websys-transport"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "libp2p",
+ "thiserror",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

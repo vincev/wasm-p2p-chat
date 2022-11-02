@@ -2,6 +2,7 @@
 members = [
   "chat-client",
   "chat-server",
+  "websys-transport",
 ]
 
 [profile.release]
