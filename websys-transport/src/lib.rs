@@ -23,10 +23,12 @@
 use futures::{future::Ready, io, prelude::*};
 use libp2p::{
     core::transport::{ListenerId, Transport, TransportError, TransportEvent},
-    Multiaddr,
+    multiaddr::{Multiaddr, Protocol},
 };
+use send_wrapper::SendWrapper;
+use web_sys::WebSocket;
 
-use std::{pin::Pin, task::Context, task::Poll};
+use std::{pin::Pin, sync::Arc, task::Context, task::Poll};
 
 #[derive(Default)]
 pub struct WebsocketTransport;
@@ -46,7 +48,21 @@ impl Transport for WebsocketTransport {
     }
 
     fn dial(&mut self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
-        todo!()
+        let ws_url = if let Some(url) = websocket_url(addr) {
+            url
+        } else {
+            return Err(TransportError::Other(Error::NotSupported));
+        };
+
+        Ok(async move {
+            let socket = match WebSocket::new(&ws_url) {
+                Ok(ws) => ws,
+                Err(err) => return Err(Error::JsError(format!("{err:?}"))),
+            };
+
+            Ok(Connection::new(socket))
+        }
+        .boxed())
     }
 
     fn dial_as_listener(
@@ -58,7 +74,7 @@ impl Transport for WebsocketTransport {
 
     fn poll(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
     ) -> std::task::Poll<TransportEvent<Self::ListenerUpgrade, Self::Error>> {
         Poll::Pending
     }
@@ -66,6 +82,35 @@ impl Transport for WebsocketTransport {
     fn address_translation(&self, _listen: &Multiaddr, _observed: &Multiaddr) -> Option<Multiaddr> {
         None
     }
+}
+
+// Try to convert Multiaddr to a Websocket url.
+fn websocket_url(addr: Multiaddr) -> Option<String> {
+    let mut protocols = addr.iter();
+    let host_port = match (protocols.next(), protocols.next()) {
+        (Some(Protocol::Ip4(ip)), Some(Protocol::Tcp(port))) => {
+            format!("{ip}:{port}")
+        }
+        (Some(Protocol::Ip6(ip)), Some(Protocol::Tcp(port))) => {
+            format!("[{ip}]:{port}")
+        }
+        (Some(Protocol::Dns(h)), Some(Protocol::Tcp(port)))
+        | (Some(Protocol::Dns4(h)), Some(Protocol::Tcp(port)))
+        | (Some(Protocol::Dns6(h)), Some(Protocol::Tcp(port)))
+        | (Some(Protocol::Dnsaddr(h)), Some(Protocol::Tcp(port))) => {
+            format!("{}:{}", &h, port)
+        }
+        _ => return None,
+    };
+
+    let (scheme, wspath) = match protocols.next() {
+        Some(Protocol::Ws(path)) => ("ws", path.into_owned()),
+        Some(Protocol::Wss(path)) => ("wss", path.into_owned()),
+        _ => return None,
+    };
+
+    // TODO: handle PeerId
+    Some(format!("{scheme}://{host_port}{wspath}"))
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -76,13 +121,24 @@ pub enum Error {
     NotSupported,
 }
 
-pub struct Connection {}
+pub struct Connection {
+    socket: SendWrapper<WebSocket>,
+}
+
+impl Connection {
+    fn new(socket: WebSocket) -> Self {
+        // TODO: Set callbacks.
+        Self {
+            socket: SendWrapper::new(socket),
+        }
+    }
+}
 
 impl AsyncRead for Connection {
     fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &mut [u8],
     ) -> Poll<Result<usize, io::Error>> {
         Poll::Pending
     }
@@ -90,9 +146,9 @@ impl AsyncRead for Connection {
 
 impl AsyncWrite for Connection {
     fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         Poll::Pending
     }
