@@ -21,12 +21,13 @@
 #![warn(clippy::all, rust_2018_idioms, unused_crate_dependencies)]
 use async_channel as channel;
 use async_executor::Executor;
+use egui::{Color32, RichText};
 use futures::prelude::*;
 use libp2p::{
     core::{upgrade::Version, Transport},
     floodsub::{self, Floodsub, FloodsubEvent},
     identity, mplex,
-    multiaddr::{Multiaddr, Protocol},
+    multiaddr::Multiaddr,
     noise,
     swarm::{keep_alive, SwarmBuilder, SwarmEvent},
     NetworkBehaviour, PeerId,
@@ -64,9 +65,11 @@ fn main() {
 }
 
 pub struct MainApp {
-    message_rx: channel::Receiver<String>,
+    event_rx: channel::Receiver<Event>,
     command_tx: channel::Sender<Command>,
-    messages: VecDeque<String>,
+    messages: VecDeque<(Color32, String)>,
+    connected: bool,
+    text: String,
 }
 
 impl MainApp {
@@ -74,39 +77,85 @@ impl MainApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
 
-        let (message_tx, message_rx) = channel::bounded(64);
+        let (event_tx, event_rx) = channel::bounded(64);
         let (command_tx, command_rx) = channel::bounded(64);
 
-        network_service(command_rx, message_tx);
+        // Start libp2p network service.
+        network_service(command_rx, event_tx);
 
         Self {
-            message_rx,
+            event_rx,
             command_tx,
             messages: Default::default(),
+            connected: false,
+            text: "/ip4/127.0.0.1/tcp/9876/ws".to_string(),
         }
     }
 }
 
 impl eframe::App for MainApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        while let Ok(message) = self.message_rx.try_recv() {
-            self.messages.push_back(message);
+        // Process events coming from the network service.
+        while let Ok(event) = self.event_rx.try_recv() {
+            match event {
+                Event::Message(text) => {
+                    self.messages.push_back((Color32::DARK_GREEN, text));
+                }
+                Event::Connected(peer_id) => {
+                    self.connected = true;
+                    self.messages
+                        .push_back((Color32::YELLOW, format!("Connected to {peer_id}")));
+                }
+                Event::Disconnected(peer_id) => {
+                    self.connected = true;
+                    self.messages
+                        .push_back((Color32::YELLOW, format!("Disconnected from {peer_id}")));
+                }
+                Event::Error(e) => self
+                    .messages
+                    .push_back((Color32::RED, format!("Error: {e}"))),
+            }
         }
 
+        // Render commands panel.
+        egui::TopBottomPanel::top("command").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if self.connected {
+                    if ui.button("Chat").clicked() {
+                        let _ = self
+                            .command_tx
+                            .send_blocking(Command::Chat(self.text.clone()));
+                        self.messages.push_back((Color32::BLUE, self.text.clone()));
+                    }
+                } else if ui.button("Connect").clicked() {
+                    if let Ok(address) = self.text.parse::<Multiaddr>() {
+                        let _ = self.command_tx.send_blocking(Command::Dial(address));
+                    } else {
+                        self.messages.push_back((
+                            Color32::RED,
+                            format!("Invalid multiaddr {}", self.text.clone()),
+                        ));
+                    }
+                }
+                ui.text_edit_singleline(&mut self.text);
+            });
+        });
+
+        // Render message panel.
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    for m in &self.messages {
-                        ui.label(&format!("Message {m}"));
+                    for (color, text) in &self.messages {
+                        ui.label(RichText::new(text).size(16.0).color(*color));
                     }
                     ui.allocate_space(ui.available_size());
                 });
         });
 
-        // Run 10 frames per second.
-        ctx.request_repaint_after(Duration::from_millis(100));
+        // Run 20 frames per second.
+        ctx.request_repaint_after(Duration::from_millis(50));
     }
 }
 
@@ -115,10 +164,14 @@ enum Command {
     Chat(String),
 }
 
-fn network_service(
-    mut command_rx: channel::Receiver<Command>,
-    message_tx: channel::Sender<String>,
-) {
+enum Event {
+    Connected(PeerId),
+    Disconnected(PeerId),
+    Message(String),
+    Error(String),
+}
+
+fn network_service(mut command_rx: channel::Receiver<Command>, event_tx: channel::Sender<Event>) {
     // Create the websocket transport.
     let local_key = identity::Keypair::generate_ed25519();
     let transport = WebsocketTransport::default()
@@ -134,6 +187,8 @@ fn network_service(
         floodsub: Floodsub,
     }
 
+    let floodsub_topic = floodsub::Topic::new("chat");
+
     // Create a Swarm to manage peers and events
     let mut swarm = {
         let local_peer_id = PeerId::from(local_key.public());
@@ -142,8 +197,7 @@ fn network_service(
             keep_alive: keep_alive::Behaviour::default(),
         };
 
-        let floodsub_topic = floodsub::Topic::new("chat");
-        behaviour.floodsub.subscribe(floodsub_topic);
+        behaviour.floodsub.subscribe(floodsub_topic.clone());
 
         SwarmBuilder::new(transport, behaviour, local_peer_id)
             .executor(Box::new(|fut| {
@@ -158,28 +212,48 @@ fn network_service(
     // Spawn task to manage Swarm events and UI channels.
     TASK_EXECUTOR
         .spawn(async move {
+           console_log!("Started event loop");
             loop {
                 futures::select! {
                     command = command_rx.select_next_some() => match command {
-                        Command::Dial(_addr) => {}
-                        Command::Chat(_message) => {}
+                        Command::Dial(addr) => {
+                            if let Err(e) = swarm.dial(addr) {
+                                let _ = event_tx.send(Event::Error(e.to_string())).await;
+                            }
+                        }
+                        Command::Chat(message) => {
+                            swarm
+                                .behaviour_mut()
+                                .floodsub
+                                .publish(floodsub_topic.clone(), message.as_bytes());
+                        }
                     },
                     event = swarm.select_next_some() => match event {
                         SwarmEvent::Behaviour(BehaviourEvent::Floodsub(FloodsubEvent::Message(message))) => {
-                            let _ = message_tx.send(String::from_utf8_lossy(&message.data).to_string()).await;
+                            let event = Event::Message(String::from_utf8_lossy(&message.data).into());
+                            let _ = event_tx.send(event).await;
                         },
                         SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                            let _ = message_tx.send(format!("Connected to {peer_id}")).await;
+                            swarm
+                                .behaviour_mut()
+                                .floodsub
+                                .add_node_to_partial_view(peer_id);
+                            let _ = event_tx.send(Event::Connected(peer_id)).await;
                         }
                         SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                            let _ = message_tx.send(format!("Connection close to {peer_id}")).await;
+                            swarm
+                                .behaviour_mut()
+                                .floodsub
+                                .remove_node_from_partial_view(&peer_id);
+                            let _ = event_tx.send(Event::Disconnected(peer_id)).await;
                         }
-                        _ => {}
+                        SwarmEvent::OutgoingConnectionError { error, .. } => {
+                            let _ = event_tx.send(Event::Error(error.to_string())).await;
+                        }
+                        event => console_log!("Swarm event: {event:?}"),
                     }
                 }
             }
         })
         .detach();
-
-    console_log!("Started executor");
 }

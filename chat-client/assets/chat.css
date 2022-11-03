@@ -8,8 +8,8 @@ body {
 }
 
 html, body {
-    height: 800px;
-    width: 500px;
+    height: 90%;
+    width: 600px;
 }
 
 canvas {
@@ -17,7 +17,7 @@ canvas {
     margin-left: auto;
     display: block;
     position: absolute;
-    top: 2%;
+    top: 0%;
     left: 50%;
     transform: translate(-50%, 0%);
 }
