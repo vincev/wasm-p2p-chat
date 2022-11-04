@@ -25,10 +25,18 @@ use libp2p::{
     core::transport::{ListenerId, Transport, TransportError, TransportEvent},
     multiaddr::{Multiaddr, Protocol},
 };
+use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
-use web_sys::WebSocket;
+use wasm_bindgen::{prelude::*, JsCast};
+use web_sys::{ErrorEvent, MessageEvent, WebSocket};
 
-use std::{pin::Pin, sync::Arc, task::Context, task::Poll};
+use std::{
+    collections::VecDeque,
+    pin::Pin,
+    sync::Arc,
+    task::Poll,
+    task::{Context, Waker},
+};
 
 #[derive(Default)]
 pub struct WebsocketTransport;
@@ -122,35 +130,118 @@ pub enum Error {
 }
 
 pub struct Connection {
+    shared: Arc<Mutex<Shared>>,
+}
+
+struct Shared {
+    opened: bool,
+    error: Option<String>,
+    data: VecDeque<u8>,
+    waker: Option<Waker>,
     socket: SendWrapper<WebSocket>,
 }
 
 impl Connection {
     fn new(socket: WebSocket) -> Self {
-        // TODO: Set callbacks.
-        Self {
-            socket: SendWrapper::new(socket),
-        }
+        socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
+
+        let shared = Arc::new(Mutex::new(Shared {
+            opened: false,
+            error: None,
+            data: VecDeque::with_capacity(1 << 16),
+            waker: None,
+            socket: SendWrapper::new(socket.clone()),
+        }));
+
+        let onmessage_callback = Closure::<dyn FnMut(_)>::new({
+            let shared = shared.clone();
+            move |e: MessageEvent| {
+                if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
+                    let mut locked = shared.lock();
+                    let bytes = js_sys::Uint8Array::new(&abuf).to_vec();
+                    locked.data.extend(bytes.into_iter());
+                    if let Some(waker) = &locked.waker {
+                        waker.wake_by_ref();
+                    }
+                } else {
+                    panic!("Unexpected data format {:?}", e.data());
+                }
+            }
+        });
+        socket.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+        onmessage_callback.forget();
+
+        let onerror_callback = Closure::<dyn FnMut(_)>::new({
+            let shared = shared.clone();
+            move |e: ErrorEvent| {
+                shared.lock().error = Some(e.message());
+            }
+        });
+        socket.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
+        onerror_callback.forget();
+
+        let onopen_callback = Closure::<dyn FnMut()>::new({
+            let shared = shared.clone();
+            move || {
+                let mut locked = shared.lock();
+                locked.opened = true;
+                if let Some(waker) = &locked.waker {
+                    waker.wake_by_ref();
+                }
+            }
+        });
+        socket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
+        onopen_callback.forget();
+
+        Self { shared }
     }
 }
 
 impl AsyncRead for Connection {
     fn poll_read(
         self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _buf: &mut [u8],
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
     ) -> Poll<Result<usize, io::Error>> {
-        Poll::Pending
+        let mut shared = self.shared.lock();
+        shared.waker = Some(cx.waker().clone());
+
+        if let Some(error) = shared.error.as_ref().cloned() {
+            Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, error)))
+        } else if shared.data.is_empty() {
+            Poll::Pending
+        } else {
+            let n = shared.data.len().min(buf.len());
+            for k in buf.iter_mut().take(n) {
+                *k = shared.data.pop_front().unwrap();
+            }
+            Poll::Ready(Ok(n))
+        }
     }
 }
 
 impl AsyncWrite for Connection {
     fn poll_write(
         self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-        _buf: &[u8],
+        cx: &mut Context<'_>,
+        buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        Poll::Pending
+        let mut shared = self.shared.lock();
+        shared.waker = Some(cx.waker().clone());
+
+        if let Some(error) = shared.error.as_ref().cloned() {
+            Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, error)))
+        } else if !shared.opened {
+            Poll::Pending
+        } else {
+            match shared.socket.send_with_u8_array(buf) {
+                Ok(()) => Poll::Ready(Ok(buf.len())),
+                Err(err) => Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Write error: {err:?}"),
+                ))),
+            }
+        }
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
