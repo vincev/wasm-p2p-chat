@@ -62,6 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         floodsub: Floodsub,
     }
 
+    let floodsub_topic = floodsub::Topic::new("chat");
     // Create a Swarm to manage peers and events
     let mut swarm = {
         let mut behaviour = Behaviour {
@@ -69,8 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             keep_alive: keep_alive::Behaviour::default(),
         };
 
-        let floodsub_topic = floodsub::Topic::new("chat");
-        behaviour.floodsub.subscribe(floodsub_topic);
+        behaviour.floodsub.subscribe(floodsub_topic.clone());
         Swarm::new(transport, behaviour, local_peer_id)
     };
 
@@ -91,6 +91,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     String::from_utf8_lossy(&message.data),
                     message.source
                 );
+                swarm
+                    .behaviour_mut()
+                    .floodsub
+                    .publish(floodsub_topic.clone(), message.data);
             }
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 println!("ConnectionEstablished to: {peer_id}");
