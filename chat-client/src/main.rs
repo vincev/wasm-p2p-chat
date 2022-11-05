@@ -33,7 +33,7 @@ use libp2p::{
     NetworkBehaviour, PeerId,
 };
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::spawn_local;
+// use wasm_bindgen_futures::spawn_local;
 use websys_transport::WebsocketTransport;
 
 use std::{collections::VecDeque, time::Duration};
@@ -48,6 +48,13 @@ extern "C" {
 
 macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+}
+
+fn spawn_local<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    TASK_EXECUTOR.spawn(future).detach();
 }
 
 // Wasm build.
@@ -81,7 +88,7 @@ impl MainApp {
         let (command_tx, command_rx) = channel::bounded(64);
 
         // Start libp2p network service.
-        network_service(command_rx, event_tx);
+        spawn_local(network_service(command_rx, event_tx));
 
         Self {
             event_rx,
@@ -91,10 +98,20 @@ impl MainApp {
             text: "/ip4/127.0.0.1/tcp/9876/ws".to_string(),
         }
     }
+
+    fn send_command(&self, command: Command) {
+        let tx = self.command_tx.clone();
+        spawn_local(async move {
+            let _ = tx.send(command).await;
+        });
+    }
 }
 
 impl eframe::App for MainApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Run pending futures
+        while TASK_EXECUTOR.try_tick() {}
+
         // Process events coming from the network service.
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
@@ -122,14 +139,12 @@ impl eframe::App for MainApp {
             ui.horizontal(|ui| {
                 if self.connected {
                     if ui.button("Chat").clicked() {
-                        let _ = self
-                            .command_tx
-                            .send_blocking(Command::Chat(self.text.clone()));
+                        self.send_command(Command::Chat(self.text.clone()));
                         self.messages.push_back((Color32::BLUE, self.text.clone()));
                     }
                 } else if ui.button("Connect").clicked() {
                     if let Ok(address) = self.text.parse::<Multiaddr>() {
-                        let _ = self.command_tx.send_blocking(Command::Dial(address));
+                        self.send_command(Command::Dial(address));
                     } else {
                         self.messages.push_back((
                             Color32::RED,
@@ -171,7 +186,10 @@ enum Event {
     Error(String),
 }
 
-fn network_service(mut command_rx: channel::Receiver<Command>, event_tx: channel::Sender<Event>) {
+async fn network_service(
+    mut command_rx: channel::Receiver<Command>,
+    event_tx: channel::Sender<Event>,
+) {
     // Create the websocket transport.
     let local_key = identity::Keypair::generate_ed25519();
     let transport = WebsocketTransport::default()
@@ -206,54 +224,46 @@ fn network_service(mut command_rx: channel::Receiver<Command>, event_tx: channel
             .build()
     };
 
-    // Starts the executor.
-    spawn_local(TASK_EXECUTOR.run(futures::future::pending::<()>()));
-
     // Spawn task to manage Swarm events and UI channels.
-    TASK_EXECUTOR
-        .spawn(async move {
-           console_log!("Started event loop");
-            loop {
-                futures::select! {
-                    command = command_rx.select_next_some() => match command {
-                        Command::Dial(addr) => {
-                            if let Err(e) = swarm.dial(addr) {
-                                let _ = event_tx.send(Event::Error(e.to_string())).await;
-                            }
-                        }
-                        Command::Chat(message) => {
-                            swarm
-                                .behaviour_mut()
-                                .floodsub
-                                .publish(floodsub_topic.clone(), message.as_bytes());
-                        }
-                    },
-                    event = swarm.select_next_some() => match event {
-                        SwarmEvent::Behaviour(BehaviourEvent::Floodsub(FloodsubEvent::Message(message))) => {
-                            let event = Event::Message(String::from_utf8_lossy(&message.data).into());
-                            let _ = event_tx.send(event).await;
-                        },
-                        SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                            swarm
-                                .behaviour_mut()
-                                .floodsub
-                                .add_node_to_partial_view(peer_id);
-                            let _ = event_tx.send(Event::Connected(peer_id)).await;
-                        }
-                        SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                            swarm
-                                .behaviour_mut()
-                                .floodsub
-                                .remove_node_from_partial_view(&peer_id);
-                            let _ = event_tx.send(Event::Disconnected(peer_id)).await;
-                        }
-                        SwarmEvent::OutgoingConnectionError { error, .. } => {
-                            let _ = event_tx.send(Event::Error(error.to_string())).await;
-                        }
-                        event => console_log!("Swarm event: {event:?}"),
+    loop {
+        futures::select! {
+            command = command_rx.select_next_some() => match command {
+                Command::Dial(addr) => {
+                    if let Err(e) = swarm.dial(addr) {
+                        let _ = event_tx.send(Event::Error(e.to_string())).await;
                     }
                 }
+                Command::Chat(message) => {
+                    swarm
+                        .behaviour_mut()
+                        .floodsub
+                        .publish(floodsub_topic.clone(), message.as_bytes());
+                }
+            },
+            event = swarm.select_next_some() => match event {
+                SwarmEvent::Behaviour(BehaviourEvent::Floodsub(FloodsubEvent::Message(message))) => {
+                    let event = Event::Message(String::from_utf8_lossy(&message.data).into());
+                    let _ = event_tx.send(event).await;
+                },
+                SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                    swarm
+                        .behaviour_mut()
+                        .floodsub
+                        .add_node_to_partial_view(peer_id);
+                    let _ = event_tx.send(Event::Connected(peer_id)).await;
+                }
+                SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                    swarm
+                        .behaviour_mut()
+                        .floodsub
+                        .remove_node_from_partial_view(&peer_id);
+                    let _ = event_tx.send(Event::Disconnected(peer_id)).await;
+                }
+                SwarmEvent::OutgoingConnectionError { error, .. } => {
+                    let _ = event_tx.send(Event::Error(error.to_string())).await;
+                }
+                event => console_log!("Swarm event: {event:?}"),
             }
-        })
-        .detach();
+        }
+    }
 }

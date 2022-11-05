@@ -504,7 +504,6 @@ dependencies = [
  "futures",
  "libp2p",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "websys-transport",
 ]
 
@@ -1317,6 +1316,10 @@ name = "futures-timer"
 version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e64b03909df88034c26dc1547e8970b91f98bdb65165d6a4e9110d94263dbb2c"
+dependencies = [
+ "gloo-timers",
+ "send_wrapper 0.4.0",
+]
 
 [[package]]
 name = "futures-util"
@@ -2921,6 +2924,12 @@ checksum = "e25dfac463d778e353db5be2449d1cce89bd6fd23c9f1ea21310ce6e5a1b29c4"
 
 [[package]]
 name = "send_wrapper"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f638d531eccd6e23b980caf34876660d38e265409d8e99b397ab71eb3612fad0"
+
+[[package]]
+name = "send_wrapper"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
@@ -3720,8 +3729,10 @@ name = "websys-transport"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "js-sys",
  "libp2p",
- "send_wrapper",
+ "parking_lot",
+ "send_wrapper 0.6.0",
  "thiserror",
  "wasm-bindgen",
  "web-sys",
