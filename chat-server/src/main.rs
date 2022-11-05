@@ -91,10 +91,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     String::from_utf8_lossy(&message.data),
                     message.source
                 );
-                swarm
-                    .behaviour_mut()
-                    .floodsub
-                    .publish(floodsub_topic.clone(), message.data);
             }
             SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                 println!("ConnectionEstablished to: {peer_id}");
