@@ -96,6 +96,13 @@ impl MainApp {
             let _ = tx.send(command).await;
         });
     }
+
+    fn send_chat(&mut self) {
+        self.send_command(Command::Chat(self.text.clone()));
+        self.messages
+            .push_back((Color32::LIGHT_BLUE, self.text.clone()));
+        self.text.clear();
+    }
 }
 
 impl eframe::App for MainApp {
@@ -117,9 +124,11 @@ impl eframe::App for MainApp {
                     self.messages
                         .push_back((Color32::YELLOW, format!("Disconnected from {peer_id}")));
                 }
-                Event::Error(e) => self
-                    .messages
-                    .push_back((Color32::RED, format!("Error: {e}"))),
+                Event::Error(e) => {
+                    self.connected = false;
+                    self.messages
+                        .push_back((Color32::RED, format!("Error: {e}")))
+                }
             }
         }
 
@@ -128,8 +137,7 @@ impl eframe::App for MainApp {
             ui.horizontal(|ui| {
                 if self.connected {
                     if ui.button("Chat").clicked() {
-                        self.send_command(Command::Chat(self.text.clone()));
-                        self.messages.push_back((Color32::LIGHT_BLUE, self.text.clone()));
+                        self.send_chat();
                     }
                 } else if ui.button("Connect").clicked() {
                     if let Ok(address) = self.text.parse::<Multiaddr>() {
@@ -141,7 +149,10 @@ impl eframe::App for MainApp {
                         ));
                     }
                 }
-                ui.text_edit_singleline(&mut self.text);
+                let r = ui.text_edit_singleline(&mut self.text);
+                if r.lost_focus() && ui.input().key_pressed(egui::Key::Enter) {
+                    self.send_chat();
+                }
             });
         });
 
