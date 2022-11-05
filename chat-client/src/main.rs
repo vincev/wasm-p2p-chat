@@ -20,7 +20,6 @@
 // SOFTWARE.
 #![warn(clippy::all, rust_2018_idioms, unused_crate_dependencies)]
 use async_channel as channel;
-use async_executor::Executor;
 use egui::{Color32, RichText};
 use futures::prelude::*;
 use libp2p::{
@@ -33,13 +32,12 @@ use libp2p::{
     NetworkBehaviour, PeerId,
 };
 use wasm_bindgen::prelude::*;
-// use wasm_bindgen_futures::spawn_local;
+use wasm_bindgen_futures::spawn_local;
 use websys_transport::WebsocketTransport;
 
 use std::{collections::VecDeque, time::Duration};
 
-static TASK_EXECUTOR: Executor<'_> = Executor::new();
-
+// Debugging console log.
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -48,13 +46,6 @@ extern "C" {
 
 macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
-}
-
-fn spawn_local<F>(future: F)
-where
-    F: Future<Output = ()> + Send + 'static,
-{
-    TASK_EXECUTOR.spawn(future).detach();
 }
 
 // Wasm build.
@@ -109,17 +100,15 @@ impl MainApp {
 
 impl eframe::App for MainApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Run pending futures
-        while TASK_EXECUTOR.try_tick() {}
-
         // Process events coming from the network service.
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 Event::Message(text) => {
-                    self.messages.push_back((Color32::DARK_GREEN, text));
+                    self.messages.push_back((Color32::GREEN, text));
                 }
                 Event::Connected(peer_id) => {
                     self.connected = true;
+                    self.text.clear();
                     self.messages
                         .push_back((Color32::YELLOW, format!("Connected to {peer_id}")));
                 }
@@ -135,12 +124,12 @@ impl eframe::App for MainApp {
         }
 
         // Render commands panel.
-        egui::TopBottomPanel::top("command").show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("command").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if self.connected {
                     if ui.button("Chat").clicked() {
                         self.send_command(Command::Chat(self.text.clone()));
-                        self.messages.push_back((Color32::BLUE, self.text.clone()));
+                        self.messages.push_back((Color32::LIGHT_BLUE, self.text.clone()));
                     }
                 } else if ui.button("Connect").clicked() {
                     if let Ok(address) = self.text.parse::<Multiaddr>() {
@@ -163,7 +152,7 @@ impl eframe::App for MainApp {
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     for (color, text) in &self.messages {
-                        ui.label(RichText::new(text).size(16.0).color(*color));
+                        ui.label(RichText::new(text).size(14.0).color(*color));
                     }
                     ui.allocate_space(ui.available_size());
                 });
@@ -219,12 +208,12 @@ async fn network_service(
 
         SwarmBuilder::new(transport, behaviour, local_peer_id)
             .executor(Box::new(|fut| {
-                TASK_EXECUTOR.spawn(fut).detach();
+                spawn_local(fut);
             }))
             .build()
     };
 
-    // Spawn task to manage Swarm events and UI channels.
+    // Manage Swarm events and UI channels.
     loop {
         futures::select! {
             command = command_rx.select_next_some() => match command {
