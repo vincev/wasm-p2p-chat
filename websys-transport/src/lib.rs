@@ -255,6 +255,7 @@ impl AsyncWrite for Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        // TODO: close the socket.
+        let shared = self.shared.lock();
+        let _ = shared.socket.close();
     }
 }
