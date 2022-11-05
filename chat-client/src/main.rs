@@ -100,7 +100,7 @@ impl MainApp {
     fn send_chat(&mut self) {
         self.send_command(Command::Chat(self.text.clone()));
         self.messages
-            .push_back((Color32::LIGHT_BLUE, self.text.clone()));
+            .push_back((Color32::LIGHT_BLUE, format!("{: >20}", self.text)));
         self.text.clear();
     }
 }
@@ -163,7 +163,7 @@ impl eframe::App for MainApp {
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     for (color, text) in &self.messages {
-                        ui.label(RichText::new(text).size(14.0).color(*color));
+                        ui.label(RichText::new(text).size(14.0).monospace().color(*color));
                     }
                     ui.allocate_space(ui.available_size());
                 });
