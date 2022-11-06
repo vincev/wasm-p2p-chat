@@ -12,6 +12,5 @@ clap = { version = "4.0.18", features = ["derive"] }
 futures = "0.3.25"
 
 [dependencies.libp2p]
-git = "https://github.com/libp2p/rust-libp2p"
-rev = "ba14ffdd"
+version = "0.49"
 features = ["async-std", "floodsub", "mplex", "noise", "tcp", "websocket"]

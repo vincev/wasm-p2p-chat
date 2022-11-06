@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let local_peer_id = PeerId::from(local_key.public());
     println!("Local peer id: {:?}", local_peer_id);
 
-    let transport = websocket::WsConfig::new(tcp::async_io::Transport::new(tcp::Config::new()))
+    let transport = websocket::WsConfig::new(tcp::TcpTransport::new(tcp::GenTcpConfig::new()))
         .upgrade(Version::V1)
         .authenticate(noise::NoiseAuthenticated::xx(&local_key)?)
         .multiplex(mplex::MplexConfig::default())
