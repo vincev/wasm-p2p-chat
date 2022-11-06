@@ -33,7 +33,7 @@ use libp2p::{
 };
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use websys_transport::WebsocketTransport;
+use libp2p_websys_transport::WebsocketTransport;
 
 use std::{collections::VecDeque, time::Duration};
 
