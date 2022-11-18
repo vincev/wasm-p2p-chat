@@ -14,7 +14,7 @@ egui = "0.19.0"
 futures = "0.3.25"
 wasm-bindgen = "0.2.83"
 wasm-bindgen-futures = "0.4.33"
-libp2p-websys-transport = "0.1.0"
+libp2p-websys-transport = "0.1"
 
 [dependencies.libp2p]
 version = "0.49"
