@@ -28,8 +28,8 @@ use libp2p::{
     identity, mplex,
     multiaddr::Multiaddr,
     noise,
-    swarm::{keep_alive, SwarmBuilder, SwarmEvent},
-    NetworkBehaviour, PeerId,
+    swarm::{keep_alive, NetworkBehaviour, Swarm, SwarmEvent},
+    PeerId,
 };
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -217,11 +217,7 @@ async fn network_service(
 
         behaviour.floodsub.subscribe(floodsub_topic.clone());
 
-        SwarmBuilder::new(transport, behaviour, local_peer_id)
-            .executor(Box::new(|fut| {
-                spawn_local(fut);
-            }))
-            .build()
+        Swarm::with_wasm_executor(transport, behaviour, local_peer_id)
     };
 
     // Manage Swarm events and UI channels.
