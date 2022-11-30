@@ -28,8 +28,8 @@ use libp2p::{
     identity, mplex,
     multiaddr::{Multiaddr, Protocol},
     noise,
-    swarm::{keep_alive, SwarmEvent},
-    tcp, websocket, NetworkBehaviour, PeerId, Swarm,
+    swarm::{keep_alive, NetworkBehaviour, SwarmEvent},
+    tcp, websocket, PeerId, Swarm,
 };
 
 use std::{error::Error, net::Ipv4Addr};
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let local_peer_id = PeerId::from(local_key.public());
     println!("Local peer id: {:?}", local_peer_id);
 
-    let transport = websocket::WsConfig::new(tcp::TcpTransport::new(tcp::GenTcpConfig::new()))
+    let transport = websocket::WsConfig::new(tcp::async_io::Transport::new(tcp::Config::new()))
         .upgrade(Version::V1)
         .authenticate(noise::NoiseAuthenticated::xx(&local_key)?)
         .multiplex(mplex::MplexConfig::default())
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
 
         behaviour.floodsub.subscribe(floodsub_topic.clone());
-        Swarm::new(transport, behaviour, local_peer_id)
+        Swarm::with_async_std_executor(transport, behaviour, local_peer_id)
     };
 
     // Listen for connections on the given port.
