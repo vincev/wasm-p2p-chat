@@ -31,9 +31,9 @@ use libp2p::{
     swarm::{keep_alive, NetworkBehaviour, Swarm, SwarmEvent},
     PeerId,
 };
+use libp2p_websys_transport::WebsocketTransport;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use libp2p_websys_transport::WebsocketTransport;
 
 use std::{collections::VecDeque, time::Duration};
 
@@ -54,12 +54,15 @@ fn main() {
     console_error_panic_hook::set_once();
 
     let web_options = eframe::WebOptions::default();
-    eframe::start_web(
-        "chat_canvas",
-        web_options,
-        Box::new(|cc| Box::new(MainApp::new(cc))),
-    )
-    .expect("failed to start eframe");
+    spawn_local(async {
+        eframe::start_web(
+            "chat_canvas",
+            web_options,
+            Box::new(|cc| Box::new(MainApp::new(cc))),
+        )
+        .await
+        .expect("failed to start eframe");
+    });
 }
 
 pub struct MainApp {
