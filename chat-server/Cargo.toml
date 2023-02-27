@@ -12,5 +12,5 @@ clap = { version = "4.0.18", features = ["derive"] }
 futures = "0.3.25"
 
 [dependencies.libp2p]
-version = "0.50"
+version = "0.51"
 features = ["async-std", "floodsub", "macros", "mplex", "noise", "tcp", "websocket"]
