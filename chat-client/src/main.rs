@@ -153,7 +153,7 @@ impl eframe::App for MainApp {
                     }
                 }
                 let r = ui.text_edit_singleline(&mut self.text);
-                if r.lost_focus() && ui.input().key_pressed(egui::Key::Enter) {
+                if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     self.send_chat();
                 }
             });
